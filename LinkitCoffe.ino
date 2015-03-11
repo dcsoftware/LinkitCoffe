@@ -5,6 +5,7 @@
 #include <LStorage.h>
 #include <LWiFi.h>
 #include <LWiFiUdp.h>
+#include <LWiFiClient.h>
 #include <Time.h>
 
 #define SERIAL_COMMAND_REQUEST "request"
@@ -19,6 +20,12 @@
 #define SECRET_KEY "secret_key"
 #define DATE_VALID "date_valid"
 #define EVENT_TYPE "event_type"
+#define WIFI_AP1 "Medical"
+#define WIFI_AUTH1 LWIFI_WPA
+#define WIFI_PASS "Medical09021972"
+#define WIFI_AP2 "Belkin."
+#define WIFI_AUTH2 LWIFI_WPA
+#define WIFI_PASS2 "CorradiniCelaniStradelliGuelfi103"
 
 #define Drv LFlash          // use Internal 10M Flash
 //#define Drv LSD           // use SD card
@@ -34,6 +41,63 @@ LFile file;
 LWiFiUDP Udp;
 
 boolean last = false, logs = false, keys = false, machine = false;
+
+void checkSecretKey() {
+	LWiFiClient client;
+	StaticJsonBuffer<300> keyBuffer;
+	int mDay, mMonth, mYear;
+
+	Drv.begin();
+
+    if(!Drv.exists("keys.txt")) {
+      Serial.println("log: cannot find file keys.txt;");
+      file = Drv.open("keys.txt", FILE_WRITE);
+      file.print("{\"day\":\"11\",\"month\":\"03\",\"year\":\"2015\",\"secret_key\":\"ABCDEFGHIJ\"}");
+      file.close();
+      keys = true;
+    } else {
+      file = Drv.open("keys.txt", FILE_READ);
+      char jsonString[100];
+      if(file.readBytes(jsonString, 100) == 0) {
+        Serial.print("log: No data on file;");
+      }
+
+      JsonObject& root = keyBuffer.parseObject(jsonString);
+      if(!root.success()) {
+        Serial.println("log: error decoding key json;");
+      } else {
+        mDay = root["day"].as<int>();
+        mMonth = root["month"].as<int>();
+        mYear = root["year"].as<int>();
+        Serial.print("log: key read from file;");
+        if((mYear == year()) && (mMonth == month()) && (mDay == day())) {
+        	Serial.println("log: secret key is up to date;");
+        } else {
+        	if(LWiFi.status() == LWIFI_STATUS_CONNECTED) {
+        		Serial.println("log: connecting to backend;");
+        		client.connect("winged-standard-741.appspot.com", 80);
+        		delay(1000);
+        		client.println("GET /gettodaykey HTTP/1.1");
+        		client.println("Host: winged-standard-741.appspot.com");
+        		client.println("Connection: close");
+        		client.println();
+
+        		while(!client.available()) {
+        			delay(100);
+        		}
+
+        		char buff[200];
+        		if(client.available()) {
+
+        		client.readBytes(buff, sizeof(buff));
+        		Serial.println(buff);
+        		}
+        	}
+        }
+      }
+      file.close();
+    }
+}
 
 void initializeData(){
 	StaticJsonBuffer<300> jsonBuffer;
@@ -76,7 +140,7 @@ void initializeData(){
     if(!Drv.exists("keys.txt")) {
       Serial.println("log: cannot find file keys.txt;");
       file = Drv.open("keys.txt", FILE_WRITE);
-      file.print("{\"date_valid\":\"20150225\",\"secret_key\":\"ABCDEFGHIJ\"}");
+      file.print("{\"day\":\"11\",\"month\":\"03\",\"year\":\"2015\",\"secret_key\":\"ABCDEFGHIJ\"}");
       file.close();
       keys = true;
     } else {
@@ -215,6 +279,8 @@ void setup() {
 
 	Serial.println("log: connected to wi fi;");
 	setSyncProvider(setSystemTime);
+	setSyncInterval(600);
+	checkSecretKey();
 	initializeData();
   
 
