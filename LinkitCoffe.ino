@@ -22,7 +22,7 @@
 #define EVENT_TYPE "event_type"
 #define WIFI_AP1 "Medical"
 #define WIFI_AUTH1 LWIFI_WPA
-#define WIFI_PASS "Medical09021972"
+#define WIFI_PASS1 "Medical09021972"
 #define WIFI_AP2 "Belkin."
 #define WIFI_AUTH2 LWIFI_WPA
 #define WIFI_PASS2 "CorradiniCelaniStradelliGuelfi103"
@@ -42,9 +42,130 @@ LWiFiUDP Udp;
 
 boolean last = false, logs = false, keys = false, machine = false;
 
+boolean readMachineFile() {
+	LFile file;
+	StaticJsonBuffer<150> jsonBuffer;
+
+    if(!Drv.exists("machine.txt")) {
+      Serial.println("log: cannot find file machine.txt;");
+      file = Drv.open("machine.txt", FILE_WRITE);
+      file.print("{\"machine_id\":\"00005678\",\"machine_name\":\"Macchina Prova 1\",\"machine_location\":\"laboratorio\"}");
+      file.close();
+      machine = true;
+      return false;
+    } else {
+      file = Drv.open("machine.txt", FILE_READ);
+      char jsonString[100];
+      if(file.readBytes(jsonString, 100) == 0) {
+        Serial.print("log: No data on file;");
+        return false;
+      }
+      Serial.println(jsonString);
+
+      JsonObject& root = jsonBuffer.parseObject(jsonString);
+      if(!root.success()) {
+        Serial.println("log: error decoding machine json;");
+        return false;
+      } else {
+        id = root[MACHINE_ID].asString();
+        Serial.print("log: id read from file ");
+        Serial.print(id);
+        Serial.println(";");
+        machine = true;
+        file.close();
+        return true;
+      }
+    }
+}
+
+boolean readKeysFile() {
+	LFile file;
+	StaticJsonBuffer<150> jsonBuffer;
+    if(!Drv.exists("keys.txt")) {
+      Serial.println("log: cannot find file keys.txt;");
+      file = Drv.open("keys.txt", FILE_WRITE);
+      file.print("{\"day\":\"11\",\"month\":\"03\",\"year\":\"2015\",\"secret_key\":\"ABCDEFGHIJ\"}");
+      file.close();
+      keys = true;
+      return false;
+    } else {
+      file = Drv.open("keys.txt", FILE_READ);
+      char jsonString[100];
+      if(file.readBytes(jsonString, 100) == 0) {
+        Serial.print("log: No data on file;");
+        return false;
+      }
+      Serial.println(jsonString);
+
+      JsonObject& root = jsonBuffer.parseObject(jsonString);
+      if(!root.success()) {
+        Serial.println("log: error decoding key json;");
+        return false;
+      } else {
+        key = root[SECRET_KEY].asString();
+        Serial.print("log: key read from file ");
+        Serial.print(key);
+        Serial.println(";");
+        keys = true;
+        file.close();
+        return true;
+      }
+    }
+}
+
+boolean readLastFile() {
+	LFile file;
+	StaticJsonBuffer<150> jsonBuffer;
+
+    if(!Drv.exists("last.txt")) {
+      Serial.println("log: cannot find file last.txt;");
+      file = Drv.open("last.txt", FILE_WRITE);
+      file.print("{\"transaction_id\":\"10000000\",\"timestamp\":\"0000000000\"}");
+      file.close();
+      last = true;
+      return false;
+    } else {
+      file = Drv.open("last.txt", FILE_READ);
+      char jsonString[100];
+      if(file.readBytes(jsonString, 100) == 0) {
+        Serial.print("log: No data on file;");
+        return false;
+      }
+      Serial.println(jsonString);
+      JsonObject& root = jsonBuffer.parseObject(jsonString);
+      if(!root.success()) {
+        Serial.println("log: error decoding last json;");
+        return false;
+      } else {
+        lastId = root[TRANSACTION_ID].asString();
+        Serial.print("log: last id read from file ");
+        Serial.print(lastId);
+        Serial.println(";");
+        last = true;
+        file.close();
+        return true;
+      }
+    }
+}
+
+boolean updateLastFile() {
+	LFile file;
+	StaticJsonBuffer<100> jsonBuffer;
+}
+
+boolean updateKeysFile() {
+	LFile file;
+	StaticJsonBuffer<100> jsonBuffer;
+}
+
+boolean storeTransaction() {
+	LFile file;
+	StaticJsonBuffer<100> jsonBuffer;
+}
+
 void checkSecretKey() {
 	LWiFiClient client;
-	StaticJsonBuffer<300> keyBuffer;
+	StaticJsonBuffer<300> readBuffer, writeBuffer;
 	int mDay, mMonth, mYear;
 
 	Drv.begin();
@@ -61,15 +182,15 @@ void checkSecretKey() {
       if(file.readBytes(jsonString, 100) == 0) {
         Serial.print("log: No data on file;");
       }
-
-      JsonObject& root = keyBuffer.parseObject(jsonString);
+      file.close();
+      JsonObject& root = readBuffer.parseObject(jsonString);
       if(!root.success()) {
         Serial.println("log: error decoding key json;");
       } else {
         mDay = root["day"].as<int>();
         mMonth = root["month"].as<int>();
         mYear = root["year"].as<int>();
-        Serial.print("log: key read from file;");
+        Serial.println("log: key read from file;");
         if((mYear == year()) && (mMonth == month()) && (mDay == day())) {
         	Serial.println("log: secret key is up to date;");
         } else {
@@ -86,7 +207,51 @@ void checkSecretKey() {
         			delay(100);
         		}
 
-        		char buff[200];
+        		char c;
+        		char buff[256];
+        		uint8_t i = 0;
+        		while (client.available() > 0) {
+        			c = (char)client.read();
+        			if((c == ';')  || (c == '\n') || (c == '\r') || (c == '\r\n') || (c == ':')) {
+        				buff[i] = ' ';
+        				//Serial.print(" ");
+        			} else {
+        				buff[i] = c;
+        				//Serial.print(c);
+        			}
+        			i++;
+        		}
+
+        		if(strstr(buff, "200 OK") > 0) {
+        			Serial.println("log: 200 OK;");
+
+
+
+        			char secret[20];
+        			uint8_t currentDate[8];
+					char * p;
+					char * q;
+					p = strstr(buff, "date");
+					q = strstr(buff, "key");
+
+					memcpy(secret, q + 4, 20);
+					memcpy(currentDate, p+5, 8);
+
+					JsonObject& jsonOut = writeBuffer.createObject();
+					jsonOut["day"] = day();
+					jsonOut["month"] = month();
+					jsonOut["year"] = year();
+					jsonOut["secret_key"] = secret;
+
+			        if(Drv.exists("keys.txt")) {
+			          Serial.println("log: keys.txt exists, removing and recreating;");
+			          Drv.remove("keys.txt");
+			          file = Drv.open("keys.txt", FILE_WRITE);
+			          jsonOut.printTo(file);
+			          file.close();
+			        }
+
+        		}
         		if(client.available()) {
 
         		client.readBytes(buff, sizeof(buff));
@@ -100,7 +265,7 @@ void checkSecretKey() {
 }
 
 void initializeData(){
-	StaticJsonBuffer<300> jsonBuffer;
+	StaticJsonBuffer<400> jsonBuffer;
 
     if(!Drv.begin()) {
     Serial.println("Error initializing sd...");
@@ -110,87 +275,12 @@ void initializeData(){
   } else {
     Serial.println("SD initialized...");
     
-    if(!Drv.exists("machine.txt")) {
-      Serial.println("log: cannot find file machine.txt;");
-      file = Drv.open("machine.txt", FILE_WRITE);
-      file.print("{\"machine_id\":\"00005678\",\"machine_name\":\"Macchina Prova 1\",\"machine_location\":\"laboratorio\"}");
-      file.close();
-      machine = true;
-    } else {
-      file = Drv.open("machine.txt", FILE_READ);
-      char jsonString[100];
-      if(file.readBytes(jsonString, 100) == 0) {
-        Serial.print("log: No data on file;");
-      }
-            Serial.println(jsonString);
+    while(!readMachineFile());
+    
+    while(!readKeysFile());
+    
+    while(!readLastFile());
 
-      JsonObject& root = jsonBuffer.parseObject(jsonString);
-      if(!root.success()) {
-        Serial.println("log: error decoding machine json;");
-      } else {
-        id = root[MACHINE_ID].asString();
-        Serial.print("log: id read from file ");
-        Serial.print(id);
-        Serial.println(";");
-        machine = true;
-      }
-      file.close();
-    }
-    
-    if(!Drv.exists("keys.txt")) {
-      Serial.println("log: cannot find file keys.txt;");
-      file = Drv.open("keys.txt", FILE_WRITE);
-      file.print("{\"day\":\"11\",\"month\":\"03\",\"year\":\"2015\",\"secret_key\":\"ABCDEFGHIJ\"}");
-      file.close();
-      keys = true;
-    } else {
-      file = Drv.open("keys.txt", FILE_READ);
-      char jsonString[70];
-      if(file.readBytes(jsonString, 70) == 0) {
-        Serial.print("log: No data on file;");
-      }
-      Serial.println(jsonString);
-
-      
-      JsonObject& root = jsonBuffer.parseObject(jsonString);
-      if(!root.success()) {
-        Serial.println("log: error decoding key json;");
-      } else {
-        key = root[SECRET_KEY].asString();
-        Serial.print("log: key read from file ");
-        Serial.print(key);
-        Serial.println(";");
-        keys = true;
-      }
-      file.close();
-    }
-    
-    if(!Drv.exists("last.txt")) {
-      Serial.println("log: cannot find file last.txt;");
-      file = Drv.open("last.txt", FILE_WRITE);
-      file.print("{\"transaction_id\":\"10000000\",\"timestamp\":\"0000000000\"}");
-      file.close();
-      last = true;
-    } else {
-      file = Drv.open("last.txt", FILE_READ);
-      char jsonString[70];
-      if(file.readBytes(jsonString, 70) == 0) {
-        Serial.print("log: No data on file;");
-      }
-      Serial.println(jsonString);
-      JsonObject& root = jsonBuffer.parseObject(jsonString);
-      if(!root.success()) {
-        Serial.println("log: error decoding last json;");
-      } else {
-        lastId = root[TRANSACTION_ID].asString();
-        Serial.print("log: last id read from file ");
-        Serial.print(lastId);
-        Serial.println(";");
-        last = true;
-      }
-      file.close();
-    }
-    
     if(!Drv.exists("log.txt")) {
       Serial.println("log: cannot find file log.txt;");
       file = Drv.open("log.txt", FILE_WRITE);
@@ -214,13 +304,13 @@ time_t setSystemTime() {
 	Udp.begin(2390);
 
 	while (Udp.parsePacket() > 0) ; // discard any previously received packets
-	Serial.println("Transmit NTP Request");
 	sendNTPpacket("it.pool.ntp.org");
+	delay(1000);
 	uint32_t beginWait = millis();
 	while (millis() - beginWait < 1500) {
 		int size = Udp.parsePacket();
 	    if (size >= NTP_PACKET_SIZE) {
-			Serial.println("Receive NTP Response");
+			Serial.println("log: NTP response received;");
 			Udp.read(packetBuffer, NTP_PACKET_SIZE);  // read packet into the buffer
 			unsigned long secsSince1900;
 	      // convert four bytes starting at location 40 to a long integer
@@ -231,7 +321,7 @@ time_t setSystemTime() {
 			return secsSince1900 - 2208988800UL;
 	    }
 	  }
-	  Serial.println("No NTP Response :-(");
+	  Serial.println("log: no NTP response;");
 	  return 0;
 }
 
@@ -267,12 +357,12 @@ void setup() {
 
 	LTask.begin();
   
-	Serial.println("Eccoci");
+	Serial.println("log: Starting...;");
 
 	LWiFi.begin();
 	Serial.println("log: connecting wi-fi;");
 
-	while (!LWiFi.connect(ssid)){
+	while (!LWiFi.connectWPA(WIFI_AP1, WIFI_PASS1)){
 		delay(1000);
 	    Serial.println("log: retry WiFi AP;");
 	}
@@ -293,32 +383,21 @@ void setup() {
 	Serial.println("log: connected to arduino mega;");
 }
 void loop() {
-	  Serial.print(hour());
-	  Serial.print(":");
-	  Serial.print(minute());
-	  Serial.print(":");
-	  Serial.print(second());
-	  Serial.print(" ");
-	  Serial.print(day());
-	  Serial.print(" ");
-	  Serial.print(month());
-	  Serial.print(" ");
-	  Serial.print(year());
-	  Serial.println();
   // put your main code here, to run repeatedly:
   if(Serial1.available()) {    
     char buff[200];
-    Serial.println("Reading from serial 1");
+    Serial.println("log: reading message from Mega;");
     Serial1.readBytesUntil(10, buff, sizeof(buff));
 
     if(0 == memcmp(buff, SERIAL_COMMAND_REQUEST, 7)) {
-      Serial.println("log: request received;");
+      Serial.println("log: initializzation request received;");
       Serial1.print(id);
       Serial1.print("/");
       Serial1.print(key);
       Serial1.print("/");
       Serial1.println(String(lastId));
     } else if (0 == memcmp(buff, SERIAL_COMMAND_STORE, 5)) {
+      Serial.println("log: store request received;");
       String c = buff;
       char jsonBuff[200];
       memcpy(jsonBuff, buff+6, sizeof(jsonBuff));
@@ -328,7 +407,7 @@ void loop() {
       JsonObject& object = newBuffer.parseObject(jsonBuff);
       
       if(!object.success()){
-        Serial.println("Error decoding data");
+        Serial.println("log: error decoding store data;");
       } else {
         if(logs) {
           file = Drv.open("log.txt", FILE_WRITE);
