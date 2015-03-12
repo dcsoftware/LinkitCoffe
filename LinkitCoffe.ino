@@ -23,7 +23,7 @@
 #define WIFI_AP1 "Medical"
 #define WIFI_AUTH1 LWIFI_WPA
 #define WIFI_PASS1 "Medical09021972"
-#define WIFI_AP2 "Belkin."
+#define WIFI_AP2 "Belkin.7335"
 #define WIFI_AUTH2 LWIFI_WPA
 #define WIFI_PASS2 "CorradiniCelaniStradelliGuelfi103"
 
@@ -148,19 +148,59 @@ boolean readLastFile() {
     }
 }
 
-boolean updateLastFile() {
-	LFile file;
-	StaticJsonBuffer<100> jsonBuffer;
-}
-
 boolean updateKeysFile() {
 	LFile file;
 	StaticJsonBuffer<100> jsonBuffer;
 }
 
-boolean storeTransaction() {
+boolean updateLastFile(JsonObject& object) {
+    object.remove(MACHINE_ID);
+    object.remove(AMOUNT);
+    object.remove(USER_ID);
+    object.remove(EVENT_TYPE);
+
+    object.printTo(Serial);
+
+    if(Drv.exists("last.txt")) {
+      Serial.println("log: last.txt exists, removing and recreating;");
+      Drv.remove("last.txt");
+      file = Drv.open("last.txt", FILE_WRITE);
+      object.printTo(file);
+      file.close();
+    } else {
+      Serial.println("log: last.txt not exists, creating;");
+      file = Drv.open("last.txt", FILE_WRITE);
+      object.printTo(file);
+      file.close();
+    }
+
+    return true;
+}
+
+boolean storeTransaction(char buff[]) {
 	LFile file;
-	StaticJsonBuffer<100> jsonBuffer;
+    char jsonBuff[200];
+    memcpy(jsonBuff, buff+6, sizeof(jsonBuff));
+    Serial.println(jsonBuff);
+
+    StaticJsonBuffer<150> newBuffer;
+    JsonObject& object = newBuffer.parseObject(jsonBuff);
+
+    if(!object.success()){
+      Serial.println("log: error decoding store data;");
+      return false;
+    } else {
+      if(!Drv.exists("log.txt")) {
+        file = Drv.open("log.txt", FILE_WRITE);
+        object.printTo(file);
+        file.close();
+        if(object.containsKey(TRANSACTION_ID)) {
+        	while(!updateLastFile(object));
+        }
+        return true;
+      }
+    }
+
 }
 
 void checkSecretKey() {
@@ -224,8 +264,6 @@ void checkSecretKey() {
 
         		if(strstr(buff, "200 OK") > 0) {
         			Serial.println("log: 200 OK;");
-
-
 
         			char secret[20];
         			uint8_t currentDate[8];
@@ -362,7 +400,7 @@ void setup() {
 	LWiFi.begin();
 	Serial.println("log: connecting wi-fi;");
 
-	while (!LWiFi.connectWPA(WIFI_AP1, WIFI_PASS1)){
+	while (!LWiFi.connectWPA(WIFI_AP2, WIFI_PASS2)){
 		delay(1000);
 	    Serial.println("log: retry WiFi AP;");
 	}
@@ -398,45 +436,11 @@ void loop() {
       Serial1.println(String(lastId));
     } else if (0 == memcmp(buff, SERIAL_COMMAND_STORE, 5)) {
       Serial.println("log: store request received;");
-      String c = buff;
-      char jsonBuff[200];
-      memcpy(jsonBuff, buff+6, sizeof(jsonBuff));
-      Serial.println(jsonBuff);
       
-      StaticJsonBuffer<300> newBuffer;
-      JsonObject& object = newBuffer.parseObject(jsonBuff);
+      while(!storeTransaction(buff));
+
       
-      if(!object.success()){
-        Serial.println("log: error decoding store data;");
-      } else {
-        if(logs) {
-          file = Drv.open("log.txt", FILE_WRITE);
-          object.printTo(file);
-          file.close();
-        }
-      }
-      
-      if(object.containsKey(TRANSACTION_ID)) {  //Aggiunto questo per evitare che in login cancelli e ricrei last.txt perchè non ha il transaction id
-        object.remove(MACHINE_ID);
-        object.remove(AMOUNT);
-        object.remove(USER_ID);
-        object.remove(EVENT_TYPE);
-      
-        object.printTo(Serial);
-      
-        if(Drv.exists("last.txt")) {
-          Serial.println("log: last.txt exists, removing and recreating;");
-          Drv.remove("last.txt");
-          file = Drv.open("last.txt", FILE_WRITE);
-          object.printTo(file);
-          file.close();
-        } else {
-          Serial.println("log: last.txt not exists, creating;");
-          file = Drv.open("last.txt", FILE_WRITE);
-          object.printTo(file);
-          file.close();
-        }
-      }
+
 
     }
   }
