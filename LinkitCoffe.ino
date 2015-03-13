@@ -39,6 +39,8 @@ String key;
 String lastId;
 LFile file;
 LWiFiUDP Udp;
+LWiFiClient client;
+
 
 boolean last = false, logs = false, keys = false, machine = false;
 
@@ -184,7 +186,7 @@ boolean storeTransaction(char buff[]) {
 
 	StaticJsonBuffer<200> newBuffer;
 	JsonObject& object = newBuffer.parseObject(jsonBuff);
-
+	//sendToServer(jsonBuff);
 	if(!object.success()){
 		Serial.println("log: error decoding store data;");
 		return false;
@@ -204,8 +206,74 @@ boolean storeTransaction(char buff[]) {
 
 }
 
+void sendToServer(char buff[]) {
+	if(LWiFi.status() == LWIFI_STATUS_CONNECTED) {
+		Serial.println("log: storing data on server;");
+		client.connect("winged-standard-741.appspot.com", 80);
+		delay(500);
+		client.println("POST /eventlogger HTTP/1.1");
+		client.println("Host: winged-standard-741.appspot.com");
+		client.println("Connection: close");
+		client.print("Content-Length:");
+		client.println(sizeof(buff));
+		client.println();
+		client.println(buff);
+		client.println();
+
+		while(!client.available()) {
+			delay(100);
+		}
+
+		char c;
+		char buff1[256];
+		uint8_t i = 0;
+		while (client.available() > 0) {
+			c = (char)client.read();
+			if((c == ';')  || (c == '\n') || (c == '\r') || (c == '\r\n') || (c == ':')) {
+				buff1[i] = ' ';
+				//Serial.print(" ");
+			} else {
+				buff1[i] = c;
+				//Serial.print(c);
+			}
+			i++;
+		}
+		Serial.println(buff1);
+//		if(strstr(buff, "200 OK") > 0) {
+//			Serial.println("log: 200 OK;");
+//
+//			char secret[21];
+//			memset(secret, 0, 21);
+//			uint8_t currentDate[8];
+//			char * p;
+//			char * q;
+//			p = strstr(buff, "date");
+//			q = strstr(buff, "key");
+//
+//			memcpy(secret, q + 4, 20);
+//			memcpy(currentDate, p+5, 8);
+//			secret[sizeof(secret) - 1] = 0;
+//			JsonObject& jsonOut = writeBuffer.createObject();
+//			jsonOut["day"] = day();
+//			jsonOut["month"] = month();
+//			jsonOut["year"] = year();
+//			jsonOut["secret_key"] = secret;
+//
+//			if(Drv.exists("keys.txt")) {
+//				Serial.println("log: keys.txt exists, removing and recreating;");
+//				Drv.remove("keys.txt");
+//				file = Drv.open("keys.txt", FILE_WRITE);
+//				jsonOut.printTo(file);
+//				file.close();
+//			}
+//
+//		}
+	}
+
+
+}
+
 void checkSecretKey() {
-	LWiFiClient client;
 	StaticJsonBuffer<300> readBuffer, writeBuffer;
 	int mDay, mMonth, mYear;
 
@@ -299,11 +367,6 @@ void checkSecretKey() {
 							file.close();
 						}
 
-					}
-					if(client.available()) {
-
-						client.readBytes(buff, sizeof(buff));
-						Serial.println(buff);
 					}
 				}
 			}
@@ -406,7 +469,6 @@ void setup() {
 	// put your setup code here, to run once:
 	Serial.begin(9600);
 	while(!Serial);
-
 	pinMode(10, OUTPUT);
 
 	LTask.begin();
@@ -422,7 +484,9 @@ void setup() {
 	}
 
 	Serial.println("log: connected to wi fi;");
-	setSyncProvider(setSystemTime);
+	while (now() < 1400000000UL) {
+		setSyncProvider(setSystemTime);
+	}
 	setSyncInterval(600);
 	checkSecretKey();
 	initializeData();
